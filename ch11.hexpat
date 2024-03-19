@@ -264,9 +264,15 @@ struct PacketHeader {
 // Packets
 
 namespace COMPUTER_GENERATED_DATA_PACKETS {
+
+    namespace FORMAT_0 {
+        bitfield CSDW {
+            padding : 32;
+        };
+    }
     
     namespace FORMAT_1 {
-        
+
         // 11.2.7.2 a. RCC 106 Version (RCCVER)
         enum Rcc106Version : u8 {
             RCC106_07 = 0x07,
@@ -403,6 +409,10 @@ struct Packet {
     auto packetBodyStart = $;
     
     match(header.ubyDataType) {
+        (HeaderDataType::COMPUTER_0): {
+            COMPUTER_GENERATED_DATA_PACKETS::FORMAT_0::CSDW csdw;
+            u8 data[header.ulDataLen - sizeof(csdw)];
+        }
         (HeaderDataType::COMPUTER_1): {
             COMPUTER_GENERATED_DATA_PACKETS::FORMAT_1::CSDW csdw;
             u8 data[header.ulDataLen - sizeof(csdw)];
@@ -420,6 +430,7 @@ struct Packet {
 
     // 11.2.1.4 Packet Trailer, Version 1
     match(header.ubyPacketFlags.dataChecksumType) {
+        (DataChecksumType::CHECKSUM_NONE): u8 filler[($ - packetStart) % 4];
         (DataChecksumType::CHECKSUM_8BIT): {
             u8 filler[($ - packetStart - 1) % 4];
             u8 uChecksum;
@@ -434,11 +445,12 @@ struct Packet {
         }
     }
     
-    std::assert(
-        uChecksum == checksum(packetBodyStart, $ - packetBodyStart - sizeof(uChecksum), 2),
-        "Packet Trailer: Checksum doesn't match"
-    );
+    if (header.ubyPacketFlags.dataChecksumType != DataChecksumType::CHECKSUM_NONE) {
+        std::assert(
+            uChecksum == checksum(packetBodyStart, $ - packetBodyStart - sizeof(uChecksum), 2),
+            "Packet Trailer: Checksum doesn't match"
+        );
+    }
 };
 
-Packet packet[2] @ 0x00;
-PacketHeader header @ $;
+Packet packet[3] @ 0x00;
