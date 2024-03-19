@@ -265,13 +265,13 @@ struct PacketHeader {
 
 namespace COMPUTER_GENERATED_DATA_PACKETS {
 
-    namespace FORMAT_0 {
+    namespace FMT_0 {
         bitfield CSDW {
             padding : 32;
         };
     }
     
-    namespace FORMAT_1 {
+    namespace FMT_1 {
 
         // 11.2.7.2 a. RCC 106 Version (RCCVER)
         enum Rcc106Version : u8 {
@@ -303,7 +303,7 @@ namespace COMPUTER_GENERATED_DATA_PACKETS {
 
 namespace TIME {
     
-    namespace FORMAT_1 {
+    namespace FMT_1 {
         // 11.2.3.2 a. Time Source
         enum TimeSource : u8 {
             INTERNAL        = 0x0,
@@ -400,6 +400,12 @@ namespace TIME {
     }
 }
 
+namespace MIL_1553 {
+    namespace FMT_1 {
+
+    }
+}
+
 // 11.2.1.3 Packet Body, Version 1
 struct Packet {
     auto packetStart = $;
@@ -410,21 +416,21 @@ struct Packet {
     
     match(header.ubyDataType) {
         (HeaderDataType::COMPUTER_0): {
-            COMPUTER_GENERATED_DATA_PACKETS::FORMAT_0::CSDW csdw;
+            COMPUTER_GENERATED_DATA_PACKETS::FMT_0::CSDW csdw;
             u8 data[header.ulDataLen - sizeof(csdw)];
         }
         (HeaderDataType::COMPUTER_1): {
-            COMPUTER_GENERATED_DATA_PACKETS::FORMAT_1::CSDW csdw;
+            COMPUTER_GENERATED_DATA_PACKETS::FMT_1::CSDW csdw;
             u8 data[header.ulDataLen - sizeof(csdw)];
         }
         (HeaderDataType::IRIG_TIME): {
-            TIME::FORMAT_1::CSDW csdw;
+            TIME::FMT_1::CSDW csdw;
             match(csdw.dateFormat) {
-                (TIME::FORMAT_1::DateFormat::IRIG_DAY): TIME::FORMAT_1::BodyDay data;
-                (TIME::FORMAT_1::DateFormat::MONTH_N_DAY): TIME::FORMAT_1::BodyDayMonthYear data;
+                (TIME::FMT_1::DateFormat::IRIG_DAY): TIME::FMT_1::BodyDay data;
+                (TIME::FMT_1::DateFormat::MONTH_N_DAY): TIME::FMT_1::BodyDayMonthYear data;
             }
         }
-        (_): std::assert(false, "Unsupported data type");
+        (_): std::assert(false, std::format("Unsupported data type at {}", packetStart));
     }
 
 
@@ -453,4 +459,6 @@ struct Packet {
     }
 };
 
-Packet packet[3] @ 0x00;
+Packet packet[6] @ 0x00;
+// while($ < std::mem::size())
+PacketHeader header @ $;
