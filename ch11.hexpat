@@ -262,31 +262,121 @@ struct PacketHeader {
 
 // Packets
 
-struct COMPUTER_GENERATED_DATA_PACKETS_FORMAT_0 {};
+namespace COMPUTER_GENERATED_DATA_PACKETS {
+    
+    enum Rcc106Version : u8 {
+        RCC106_07 = 0x07,
+        RCC106_09 = 0x08,
+        RCC106_11 = 0x09,
+        RCC106_13 = 0x0A,
+        RCC106_15 = 0x0B,
+        RCC106_17 = 0x0C,
+        RCC106_19 = 0x0D,
+        RCC106_22 = 0x0E,
+    };
+    
+    enum SetupRecordFormat : u8 {
+        ASCII   = 0b0,
+        XML     = 0b1,
+    };
+    
+    bitfield FORMAT_1 {
+        Rcc106Version       rccVer  : 7;
+        bool                srcc    : 1;
+        SetupRecordFormat   recFmt  : 1;
+        padding                     : 21;
+    };
+}
 
+namespace TIME {
+    
+    enum TimeSource : u8 {
+        INTERNAL        = 0x0,
+        EXTERNAL        = 0x1,
+        RMM_INTERNAL    = 0x2,
+        NONE            = 0xF,
+    };
 
-enum Rcc106Version : u8 {
-    RCC106_07 = 0x07,
-    RCC106_09 = 0x08,
-    RCC106_11 = 0x09,
-    RCC106_13 = 0x0A,
-    RCC106_15 = 0x0B,
-    RCC106_17 = 0x0C,
-    RCC106_19 = 0x0D,
-    RCC106_22 = 0x0E,
-};
+    enum TimeFormat : u8 {
+        IRIG_B      = 0x0,
+        IRIG_A      = 0x1,
+        IRIG_G      = 0x2,
+        RTC         = 0x3,
+        GPS_UTC     = 0x4,
+        GPS_NATIVE  = 0x5,
+        NONE        = 0xF,
+    };
 
-enum SetupRecordFormat : u8 {
-    ASCII   = 0b0,
-    XML     = 0b1,
-};
+    enum DateFormat : u8 {
+        IRIG_DAY    = 0b0,
+        MONTH_N_DAY = 0b1,
+    };
 
-bitfield COMPUTER_GENERATED_DATA_PACKETS_FORMAT_1 {
-    Rcc106Version       rccVer  : 7;
-    bool                srcc    : 1;
-    SetupRecordFormat   recFmt  : 1;
-    padding                     : 21;
-};
+    enum IrigTimeSource : u8 {
+        FREEWHEELING                = 0b0000,
+        FREEWHEELING_FROM_TIME_CMD  = 0b0001,
+        FREEWHEELING_FROM_RMM_TIME  = 0b0010,
+        LOCKED_TO_IRIG_SIGNAL       = 0b0011,
+        LOCKED_TO_GPS               = 0b0100,
+        LOCKED_TO_NTP               = 0b0101,
+        LOCKED_TO_PTP               = 0b0110,
+        LOCKED_TO_EMBEDDED_TIME     = 0b0111, // PCM / MIL-STD-1553
+    };
+
+    bitfield FORMAT_1 {
+        TimeSource src          : 4;
+        TimeFormat fmt          : 4;
+        // Date
+        bool isLeapYear         : 1;
+        DateFormat dateFormat   : 1;
+        padding                 : 2; // Reserved
+        // Date end
+        IrigTimeSource its      : 4;
+        padding                 : 16;
+    };
+
+    bitfield BodyDay {
+        Tmn : 4;
+        Hmn : 4;
+        Sn  : 4;
+        TSn : 3;
+        padding : 1;
+        Mn  : 4;
+        TMn : 2;
+        padding : 2;
+        Hn  : 4;
+        THn : 2;
+        padding : 2;
+        Dn  : 4;
+        TDn : 4;
+        HDn : 2;
+        padding: 6;
+    };
+
+    bitfield BodyDayMonthYear {
+        Tmn : 4;
+        Hmn : 4;
+        Sn  : 4;
+        TSn : 3;
+        padding : 1;
+        Mn  : 4;
+        TMn : 2;
+        padding : 2;
+        Hn  : 4;
+        THn : 2;
+        padding : 2;
+        Dn  : 4;
+        TDn : 4;
+        On  : 4;
+        Ton : 1;
+        padding : 3;
+        Yn  : 4;
+        TYn : 4;
+        HYn : 4;
+        OYn : 2;
+        padding : 2;
+    };
+}
 
 // 11.2.1.3 Packet Body, Version 1
 struct Packet {
@@ -297,13 +387,22 @@ struct Packet {
     auto packetBodyStart = $;
     
     match(header.ubyDataType) {
-        (HeaderDataType::COMPUTER_1): COMPUTER_GENERATED_DATA_PACKETS_FORMAT_1 packet;
+        (HeaderDataType::COMPUTER_1): {
+            COMPUTER_GENERATED_DATA_PACKETS::FORMAT_1 packet;
+            u8 data[header.ulDataLen - sizeof(packet)];
+        }
+        (HeaderDataType::IRIG_TIME): {
+            TIME::FORMAT_1 packet;
+            match(packet.dateFormat) {
+                (TIME::DateFormat::IRIG_DAY): TIME::BodyDay data;
+                (TIME::DateFormat::MONTH_N_DAY): TIME::BodyDayMonthYear data;
+            }
+        }
+        (_): std::assert(false, "Unsupported data type");
     }
 
-    u8 data[header.ulDataLen - sizeof(packet)];
 
     // 11.2.1.4 Packet Trailer, Version 1
-    
     match(header.ubyPacketFlags.dataChecksumType) {
         (DataChecksumType::CHECKSUM_8BIT): {
             u8 filler[($ - packetStart - 1) % 4];
@@ -325,5 +424,5 @@ struct Packet {
     );
 };
 
-Packet packet @ 0x00;
+Packet packet[2] @ 0x00;
 PacketHeader header @ $;
