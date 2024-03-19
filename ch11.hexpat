@@ -264,24 +264,24 @@ struct PacketHeader {
 
 struct COMPUTER_GENERATED_DATA_PACKETS_FORMAT_0 {};
 
-struct COMPUTER_GENERATED_DATA_PACKETS_FORMAT_1 {
 
-    enum Rcc106Version : u8 {
-        RCC106_07 = 0x07,
-        RCC106_09 = 0x08,
-        RCC106_11 = 0x09,
-        RCC106_13 = 0x0A,
-        RCC106_15 = 0x0B,
-        RCC106_17 = 0x0C,
-        RCC106_19 = 0x0D,
-        RCC106_22 = 0x0E,
-    };
+enum Rcc106Version : u8 {
+    RCC106_07 = 0x07,
+    RCC106_09 = 0x08,
+    RCC106_11 = 0x09,
+    RCC106_13 = 0x0A,
+    RCC106_15 = 0x0B,
+    RCC106_17 = 0x0C,
+    RCC106_19 = 0x0D,
+    RCC106_22 = 0x0E,
+};
 
-    enum SetupRecordFormat : u8 {
-        ASCII   = 0b0,
-        XML     = 0b1,
-    };
+enum SetupRecordFormat : u8 {
+    ASCII   = 0b0,
+    XML     = 0b1,
+};
 
+bitfield COMPUTER_GENERATED_DATA_PACKETS_FORMAT_1 {
     Rcc106Version       rccVer  : 7;
     bool                srcc    : 1;
     SetupRecordFormat   recFmt  : 1;
@@ -290,12 +290,40 @@ struct COMPUTER_GENERATED_DATA_PACKETS_FORMAT_1 {
 
 // 11.2.1.3 Packet Body, Version 1
 struct Packet {
+    auto packetStart = $;
+    
     PacketHeader header;
 
+    auto packetBodyStart = $;
+    
     match(header.ubyDataType) {
-        (HeaderDataType::COMPUTER_1): a;
+        (HeaderDataType::COMPUTER_1): COMPUTER_GENERATED_DATA_PACKETS_FORMAT_1 packet;
     }
-    IPTS
+
+    u8 data[header.ulDataLen - sizeof(packet)];
+
+    // 11.2.1.4 Packet Trailer, Version 1
+    
+    match(header.ubyPacketFlags.dataChecksumType) {
+        (DataChecksumType::CHECKSUM_8BIT): {
+            u8 filler[($ - packetStart - 1) % 4];
+            u8 uChecksum;
+        }
+        (DataChecksumType::CHECKSUM_16BIT): {
+            u8 filler[($ - packetStart - 2) % 4];
+            u16 uChecksum;
+        }
+        (DataChecksumType::CHECKSUM_32BIT): {
+            u8 filler[($ - packetStart - 4) % 4];
+            u32 uChecksum;
+        }
+    }
+    
+    std::assert(
+        uChecksum == checksum(packetBodyStart, $ - packetBodyStart - sizeof(uChecksum), 2),
+        "Packet Trailer: Checksum doesn't match"
+    );
 };
 
 Packet packet @ 0x00;
+PacketHeader header @ $;
