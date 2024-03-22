@@ -1,4 +1,5 @@
-// irig106-23 ch11
+#pragma author Mipster
+#pragma description irig106-23 ch11 files
 
 import std.sys;
 import std.mem;
@@ -6,11 +7,15 @@ import std.mem;
 // utils
 
 fn checksum(u128 addr, u128 len, u8 size) {
-    u16 sum = 0;
+    u128 sum = 0;
     for(u128 i = 0, i < len, i = i + size) {
-        sum += std::mem::read_unsigned(addr + i, 2, std::mem::Endian::Little);
+        sum += std::mem::read_unsigned(addr + i, size, std::mem::Endian::Little);
     }
-    return sum;
+
+    // insure the output is in the correct size
+    // 2 ^ (8 * size) - 1 is the max value for a given size
+    // so binary &ing it caps the output to the correct size
+    return sum & ((1 << (8 * size)) - 1);
 };
 
 // 11.2.1.1 e. Data Type Version
@@ -34,6 +39,15 @@ enum DataChecksumType : u8 {
     CHECKSUM_8BIT   = 0b01,
     CHECKSUM_16BIT  = 0b10,
     CHECKSUM_32BIT  = 0b11,
+};
+
+fn checksumToLen(DataChecksumType type) {
+    match(type) {
+        (DataChecksumType::CHECKSUM_NONE): return 0;
+        (DataChecksumType::CHECKSUM_8BIT): return 1;
+        (DataChecksumType::CHECKSUM_16BIT): return 2;
+        (DataChecksumType::CHECKSUM_32BIT): return 4;
+    }
 };
 
 enum SecondaryDateFormat : u8 {
@@ -223,9 +237,16 @@ struct PacketSecondaryHeader {
     u16     uReserved;    //
     u16     uSecChecksum; ///< Secondary Header Checksum
     
+    auto checksumOut = checksum(headerStartPos, $ - headerStartPos - sizeof(uSecChecksum), sizeof(uSecChecksum));
     std::assert(
-        uSecChecksum == checksum(headerStartPos, $ - headerStartPos - 2, 2),
-        "Secondary Packet Header: Checksum doesn't match"
+        uSecChecksum == checksumOut,
+        std::format(
+            "Secondary Packet Header: Checksum doesn't match\n location: {}, width: {}, calculated: {:x}, expected: {:x}",
+            headerStartPos,
+            sizeof(uSecChecksum),
+            checksumOut,
+            uSecChecksum
+        )
     );
 };
 
@@ -250,9 +271,16 @@ struct PacketHeader {
     u8              aubyRefTime[6]; ///< Reference time
     u16             uChecksum;      ///< Header Checksum
     
+    auto checksumOut = checksum(headerStartPos, $ - headerStartPos - sizeof(uChecksum), sizeof(uChecksum));
     std::assert(
-        uChecksum == checksum(headerStartPos, $ - headerStartPos - 2, 2),
-        "Packet Header: Checksum doesn't match"
+        uChecksum == checksumOut,
+        std::format(
+            "Packet Header: Checksum doesn't match\n location: {}, width: {}, calculated: {:x}, expected: {:x}",
+            headerStartPos,
+            sizeof(uChecksum),
+            checksumOut,
+            uChecksum
+        )
     );
     
     if (ubyPacketFlags.secondaryHeaderPresence) {
@@ -266,8 +294,8 @@ struct PacketHeader {
 namespace COMPUTER_GENERATED_DATA_PACKETS {
 
     namespace FMT_0 {
-        bitfield CSDW {
-            padding : 32;
+        struct CSDW {
+            u32 userDefined;
         };
     }
     
@@ -401,8 +429,118 @@ namespace TIME {
 }
 
 namespace MIL_1553 {
+
     namespace FMT_1 {
 
+        enum TimeTagBits : u8 {
+            LAST_WORD_LAST_BIT  = 0b00,
+            LAST_WORD_FIRST_BIT = 0b01,
+            FIRST_WORD_LAST_BIT = 0b10, // (command word)
+        };
+
+        // 11.2.4.2 a. MIL-STD-1553 Packet Channel-Specific Data
+        bitfield CSDW {
+            msgCount        : 24;
+            padding         : 6;
+            TimeTagBits ttb : 2;
+        };
+
+        enum BusID : u8 {
+            CHANNEL_A = 0b0,
+            CHANNEL_B = 0b1,
+        };
+
+        // 11.2.4.2 c. (2) Block Status Word
+        bitfield BlockStatusWord {
+            padding                 : 3;
+            bool invalidWord        : 1;
+            bool syncTypeError      : 1;
+            bool wordCountError     : 1;
+            padding                 : 3;
+            bool responseTimeOut    : 1;
+            bool formatError        : 1;
+            bool isRtToRt           : 1;
+            bool messageError       : 1;
+            BusID busID             : 1;
+            padding                 : 2;
+        };
+
+        // 11.2.4.2 c. (2) Gap Times Word
+        struct GapTime {
+            u8 gap1;
+            u8 gap2;
+        };
+
+        // 11.2.4.2 c. (2) Intra-Packet Data Header
+        struct IntraHeader {
+            BlockStatusWord blockStatusWord;
+            GapTime gapTimeWord;
+            u16 lengthWord;
+        };
+
+        enum TransmisionDirection : u8 {
+            RECIEVE = 0b0,
+            TRANSMIT = 0b1,
+        };
+
+        // MIL-STD-1553C 4.3.3.5 FIGURE 3
+        bitfield CommandWord {
+            remoteTerminal              : 5;
+            TransmisionDirection dir    : 1;
+            subAddress                  : 5;
+            dataWordsNum                : 5;
+        };
+
+        // MIL-STD-1553C 4.3.3.5 FIGURE 3
+        bitfield StatusWord {
+            remoteTerminal          : 5;
+            messageError            : 1;
+            instrumentation         : 1;
+            serviceRequest          : 1;
+            padding                 : 3;
+            broadcastCmdRecieved    : 1;
+            busy                    : 1;
+            subsystemFlag           : 1;
+            // DYNAMIC BUS CONTROL ACCEPTANCE
+            dbca                    : 1;
+            terminalFlag            : 1;
+        };
+
+        // MIL-STD-1553C 4.3.3.6.3
+        struct RT2RTFormat {
+            CommandWord recieveCommandWord;
+            CommandWord transmitCommandWord;
+            StatusWord transmitStatusWord;
+            u8 data[transmitCommandWord.dataWordsNum];
+            StatusWord recieveStatusWord;
+        };
+
+        // MIL-STD-1553C 4.3.3.6.1
+        // MIL-STD-1553C 4.3.3.6.2
+        struct NonRT2RT {
+            CommandWord commandWord;
+
+            if (commandWord.dir == TransmisionDirection::TRANSMIT) {
+                StatusWord statusWord;
+            }
+
+            u8 data[commandWord.dataWordsNum];
+
+            if (commandWord.dir == TransmisionDirection::RECIEVE) {
+                StatusWord statusWord;
+            }
+        };
+
+        // 11.2.4.2 d. Packet Format
+        struct IntraPacket {
+            u64 IPTS;
+            IntraHeader header;
+
+            match (header.blockStatusWord.isRtToRt) {
+                (true): RT2RTFormat body;
+                (false): NonRT2RT body;
+            }
+        };
     }
 }
 
@@ -430,35 +568,47 @@ struct Packet {
                 (TIME::FMT_1::DateFormat::MONTH_N_DAY): TIME::FMT_1::BodyDayMonthYear data;
             }
         }
-        (_): std::assert(false, std::format("Unsupported data type at {}", packetStart));
+        (HeaderDataType::MIL_1553_FMT_1): {
+            MIL_1553::FMT_1::CSDW csdw;
+            
+            /*
+            there are issues with this currently
+            MIL_1553::FMT_1::IntraPacket data[while($ - packetBodyStart < header.ulDataLen - sizeof(csdw))];
+            */
+            u8 data[header.ulDataLen - sizeof(csdw)];
+        }
+        (_): std::assert_warn(false, std::format("Unsupported data type at {}", packetStart));
     }
 
 
     // 11.2.1.4 Packet Trailer, Version 1
+    auto checksumLen = checksumToLen(header.ubyPacketFlags.dataChecksumType);
+    
+    u8 filler[($ - packetStart - checksumLen) % 4];
+    
+    if (header.ubyPacketFlags.dataChecksumType != DataChecksumType::CHECKSUM_NONE)
+        auto checksumOut = checksum(packetBodyStart, $ - packetBodyStart, checksumLen);
+    
     match(header.ubyPacketFlags.dataChecksumType) {
-        (DataChecksumType::CHECKSUM_NONE): u8 filler[($ - packetStart) % 4];
-        (DataChecksumType::CHECKSUM_8BIT): {
-            u8 filler[($ - packetStart - 1) % 4];
-            u8 uChecksum;
-        }
-        (DataChecksumType::CHECKSUM_16BIT): {
-            u8 filler[($ - packetStart - 2) % 4];
-            u16 uChecksum;
-        }
-        (DataChecksumType::CHECKSUM_32BIT): {
-            u8 filler[($ - packetStart - 4) % 4];
-            u32 uChecksum;
-        }
+        (DataChecksumType::CHECKSUM_8BIT): u8 uChecksum;
+        (DataChecksumType::CHECKSUM_16BIT): u16 uChecksum;
+        (DataChecksumType::CHECKSUM_32BIT): u32 uChecksum;
     }
     
     if (header.ubyPacketFlags.dataChecksumType != DataChecksumType::CHECKSUM_NONE) {
-        std::assert(
-            uChecksum == checksum(packetBodyStart, $ - packetBodyStart - sizeof(uChecksum), 2),
-            "Packet Trailer: Checksum doesn't match"
+        std::assert_warn(
+            uChecksum == checksumOut,
+            std::format(
+                "Packet Trailer: Checksum doesn't match\n location: {}, width: {}, calculated: {:x}, expected: {:x}",
+                packetStart,
+                checksumToLen(header.ubyPacketFlags.dataChecksumType),
+                checksumOut,
+                uChecksum
+            )
         );
     }
 };
 
-Packet packet[6] @ 0x00;
+Packet packet[7] @ 0x00;
 // while($ < std::mem::size())
-PacketHeader header @ $;
+//PacketHeader header @ $;
