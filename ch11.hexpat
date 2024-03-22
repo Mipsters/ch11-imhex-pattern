@@ -1,5 +1,6 @@
 #pragma author Mipster
 #pragma description irig106-23 ch11 files
+#pragma endian little
 
 import std.sys;
 import std.mem;
@@ -231,28 +232,21 @@ enum HeaderDataType : u8 {
 
 // 11.2.1.2 Packet Secondary Header
 struct PacketSecondaryHeader {
-    auto headerStartPos = $;
+    u128 headerStartPos = $;
     
     u8      abyTime[8];   ///< Time (start secondary header)
     u16     uReserved;    //
     u16     uSecChecksum; ///< Secondary Header Checksum
     
-    auto checksumOut = checksum(headerStartPos, $ - headerStartPos - sizeof(uSecChecksum), sizeof(uSecChecksum));
-    std::assert(
-        uSecChecksum == checksumOut,
-        std::format(
-            "Secondary Packet Header: Checksum doesn't match\n location: {}, width: {}, calculated: {:x}, expected: {:x}",
-            headerStartPos,
-            sizeof(uSecChecksum),
-            checksumOut,
-            uSecChecksum
-        )
-    );
+    u128 checksumOut = checksum(headerStartPos, $ - headerStartPos - sizeof(uSecChecksum), sizeof(uSecChecksum));
+    
+    str outStr = std::format("Secondary Packet Header: Checksum doesn't match\n location: {}, width: {}, calculated: {:x}, expected: {:x}", headerStartPos, sizeof(uSecChecksum), checksumOut,uSecChecksum);
+    std::assert(uSecChecksum == checksumOut, outStr);
 };
 
 // 11.2.1.1 Packet Header, Version 1
 struct PacketHeader {
-    auto headerStartPos = $;
+    u128 headerStartPos = $;
     
     u16             uSync;          ///< Packet Sync Pattern
     std::assert(uSync == 0xEB25, "Packet Header: bad sync value");
@@ -263,25 +257,18 @@ struct PacketHeader {
     // seqnum need to be 1 more (with rollover) then the value of the prev packcet in channel
     u8              ubySeqNum;      ///< Sequence Number
     PacketFlags     ubyPacketFlags; ///< PacketFlags
-    std::assert(
-        !ubyPacketFlags.iptsTimeSource || ubyPacketFlags.iptsTimeSource && ubyPacketFlags.secondaryHeaderPresence,
-        "Packet Header: IPTS it source is secondary header but secondary header isn't present");
+    
+    str outStr = "Packet Header: IPTS it source is secondary header but secondary header isn't present";
+    std::assert(!ubyPacketFlags.iptsTimeSource || ubyPacketFlags.iptsTimeSource && ubyPacketFlags.secondaryHeaderPresence, outStr);
     
     HeaderDataType  ubyDataType;    ///< Data type
     u8              aubyRefTime[6]; ///< Reference time
     u16             uChecksum;      ///< Header Checksum
     
-    auto checksumOut = checksum(headerStartPos, $ - headerStartPos - sizeof(uChecksum), sizeof(uChecksum));
-    std::assert(
-        uChecksum == checksumOut,
-        std::format(
-            "Packet Header: Checksum doesn't match\n location: {}, width: {}, calculated: {:x}, expected: {:x}",
-            headerStartPos,
-            sizeof(uChecksum),
-            checksumOut,
-            uChecksum
-        )
-    );
+    u128 checksumOut = checksum(headerStartPos, $ - headerStartPos - sizeof(uChecksum), sizeof(uChecksum));
+    
+    outStr = std::format("Packet Header: Checksum doesn't match\n location: {}, width: {}, calculated: {:x}, expected: {:x}", headerStartPos, sizeof(uChecksum), checksumOut, uChecksum);
+    std::assert(uChecksum == checksumOut, outStr);
     
     if (ubyPacketFlags.secondaryHeaderPresence) {
         PacketSecondaryHeader secondaryHeader;
@@ -472,7 +459,7 @@ namespace MIL_1553 {
         };
 
         // 11.2.4.2 c. (2) Intra-Packet Data Header
-        struct IntraHeader {
+        struct IntraDataHeader {
             BlockStatusWord blockStatusWord;
             GapTime gapTimeWord;
             u16 lengthWord;
@@ -484,73 +471,115 @@ namespace MIL_1553 {
         };
 
         // MIL-STD-1553C 4.3.3.5 FIGURE 3
+        // notice the struct is reverse for big endian support
         bitfield CommandWord {
-            remoteTerminal              : 5;
-            TransmisionDirection dir    : 1;
-            subAddress                  : 5;
             dataWordsNum                : 5;
+            subAddress                  : 5;
+            TransmisionDirection dir    : 1;
+            remoteTerminal              : 5;
+        };
+
+        fn dataWordsFromCW(auto dataWordsNum) {
+            match(dataWordsNum) {
+                (0): return 32;
+                (1): return 31;
+            }
+            return dataWordsNum;
         };
 
         // MIL-STD-1553C 4.3.3.5 FIGURE 3
+        // notice the struct is reverse for big endian support
         bitfield StatusWord {
-            remoteTerminal          : 5;
-            messageError            : 1;
-            instrumentation         : 1;
-            serviceRequest          : 1;
-            padding                 : 3;
-            broadcastCmdRecieved    : 1;
-            busy                    : 1;
-            subsystemFlag           : 1;
+            bool terminalFlag           : 1;
             // DYNAMIC BUS CONTROL ACCEPTANCE
-            dbca                    : 1;
-            terminalFlag            : 1;
+            bool dbca                   : 1;
+            bool subsystemFlag          : 1;
+            bool busy                   : 1;
+            bool broadcastCmdRecieved   : 1;
+            padding                     : 3;
+            bool serviceRequest         : 1;
+            bool instrumentation        : 1;
+            bool messageError           : 1;
+            remoteTerminal              : 5;
         };
 
         // MIL-STD-1553C 4.3.3.6.3
-        struct RT2RTFormat {
-            CommandWord recieveCommandWord;
-            CommandWord transmitCommandWord;
-            StatusWord transmitStatusWord;
-            u8 data[transmitCommandWord.dataWordsNum];
-            StatusWord recieveStatusWord;
+        struct RT2RTBody <auto byteCount> {
+            u128 bodyStart = $;
+
+            if ($ - bodyStart + sizeof(CommandWord) <= byteCount)
+                CommandWord recieveCommandWord;
+            
+            if ($ - bodyStart + sizeof(CommandWord) <= byteCount)
+                CommandWord transmitCommandWord;
+            
+            if ($ - bodyStart + sizeof(StatusWord) <= byteCount)
+                StatusWord transmitStatusWord;
+            
+            std::assert(transmitCommandWord.remoteTerminal == transmitStatusWord.remoteTerminal, "MIL_1553::FMT_1: rt2rt transmit command and status word need to share rt");
+            
+            u8 realDataWordsNum = MIL_1553::FMT_1::dataWordsFromCW(transmitCommandWord.dataWordsNum);
+            u128 startLoc = $;
+            u16 data[while(($ - startLoc < realDataWordsNum * 2) && ($ - bodyStart < byteCount))];
+
+            if ($ - bodyStart + sizeof(StatusWord) <= byteCount)
+                StatusWord recieveStatusWord;
+            
+            std::assert(transmitCommandWord.remoteTerminal == transmitStatusWord.remoteTerminal, "MIL_1553::FMT_1: rt2rt recieve command and status word need to share rt");
+            str outStr = std::format("MIL_1553::FMT_1: rt2rt command words need to have the same length\nlocation 0x{:x}", bodyStart);
+            std::assert(recieveCommandWord.dataWordsNum == transmitCommandWord.dataWordsNum, outStr);
         };
 
         // MIL-STD-1553C 4.3.3.6.1
         // MIL-STD-1553C 4.3.3.6.2
-        struct NonRT2RT {
-            CommandWord commandWord;
+        struct NonRT2RTBody <auto byteCount> {
+            u128 bodyStart = $;
+
+            if ($ - bodyStart + sizeof(CommandWord) <= byteCount)
+                CommandWord commandWord;
 
             if (commandWord.dir == TransmisionDirection::TRANSMIT) {
-                StatusWord statusWord;
+                if ($ - bodyStart + sizeof(StatusWord) <= byteCount) {
+                    StatusWord statusWord;
+                    std::assert(commandWord.remoteTerminal == statusWord.remoteTerminal, "MIL_1553::FMT_1: command and status word need to share rt");
+                }
             }
 
-            u8 data[commandWord.dataWordsNum];
-
+            u8 realDataWordsNum = MIL_1553::FMT_1::dataWordsFromCW(commandWord.dataWordsNum);
+            u128 startLoc = $;
+            u16 data[while(($ - startLoc < realDataWordsNum * 2) && ($ - bodyStart < byteCount))];
+            
             if (commandWord.dir == TransmisionDirection::RECIEVE) {
-                StatusWord statusWord;
+                if ($ - bodyStart + sizeof(StatusWord) <= byteCount) {
+                    StatusWord statusWord;
+                    std::assert(commandWord.remoteTerminal == statusWord.remoteTerminal, "MIL_1553::FMT_1: command and status word need to share rt");
+                }
             }
         };
-
+        
         // 11.2.4.2 d. Packet Format
         struct IntraPacket {
             u64 IPTS;
-            IntraHeader header;
-
-            match (header.blockStatusWord.isRtToRt) {
-                (true): RT2RTFormat body;
-                (false): NonRT2RT body;
-            }
+            IntraDataHeader header;
+            
+            if (header.blockStatusWord.isRtToRt)
+                RT2RTBody<header.lengthWord> body;
+            else
+                NonRT2RTBody<header.lengthWord> body;
+                
+            str outStr = std::format("MIL_1553::FMT_1: body has wrong size\nlocation: 0x{:x}, expected: {}, found: {}", addressof(IPTS), header.lengthWord, sizeof(body));
+            std::assert_warn(sizeof(body) == header.lengthWord, outStr);
         };
     }
 }
 
 // 11.2.1.3 Packet Body, Version 1
 struct Packet {
-    auto packetStart = $;
+    u128 packetStart = $;
     
     PacketHeader header;
 
-    auto packetBodyStart = $;
+    u128 packetBodyStart = $;
     
     match(header.ubyDataType) {
         (HeaderDataType::COMPUTER_0): {
@@ -571,23 +600,24 @@ struct Packet {
         (HeaderDataType::MIL_1553_FMT_1): {
             MIL_1553::FMT_1::CSDW csdw;
             
-            /*
-            there are issues with this currently
-            MIL_1553::FMT_1::IntraPacket data[while($ - packetBodyStart < header.ulDataLen - sizeof(csdw))];
-            */
-            u8 data[header.ulDataLen - sizeof(csdw)];
+            // there are issues with this currently
+            MIL_1553::FMT_1::IntraPacket data[csdw.msgCount];
+            //u8 data[header.ulDataLen - sizeof(csdw)];
         }
-        (_): std::assert_warn(false, std::format("Unsupported data type at {}", packetStart));
+        (_): {
+            std::assert_warn(false, std::format("Unsupported data type at {}", packetStart));
+            u8 data[header.ulDataLen] [[comment("default implementation")]];
+        }
     }
 
 
     // 11.2.1.4 Packet Trailer, Version 1
-    auto checksumLen = checksumToLen(header.ubyPacketFlags.dataChecksumType);
+    u128 checksumLen = checksumToLen(header.ubyPacketFlags.dataChecksumType);
     
     u8 filler[($ - packetStart - checksumLen) % 4];
     
     if (header.ubyPacketFlags.dataChecksumType != DataChecksumType::CHECKSUM_NONE)
-        auto checksumOut = checksum(packetBodyStart, $ - packetBodyStart, checksumLen);
+        u128 checksumOut = checksum(packetBodyStart, $ - packetBodyStart, checksumLen);
     
     match(header.ubyPacketFlags.dataChecksumType) {
         (DataChecksumType::CHECKSUM_8BIT): u8 uChecksum;
@@ -596,19 +626,11 @@ struct Packet {
     }
     
     if (header.ubyPacketFlags.dataChecksumType != DataChecksumType::CHECKSUM_NONE) {
-        std::assert_warn(
-            uChecksum == checksumOut,
-            std::format(
-                "Packet Trailer: Checksum doesn't match\n location: {}, width: {}, calculated: {:x}, expected: {:x}",
-                packetStart,
-                checksumToLen(header.ubyPacketFlags.dataChecksumType),
-                checksumOut,
-                uChecksum
-            )
-        );
+        str outStr = std::format("Packet Trailer: Checksum doesn't match\n location: {}, width: {}, calculated: {:x}, expected: {:x}", packetStart, checksumToLen(header.ubyPacketFlags.dataChecksumType), checksumOut, uChecksum);
+        std::assert_warn(uChecksum == checksumOut, outStr);
     }
 };
 
-Packet packet[7] @ 0x00;
+Packet packet[99] @ 0x00;
 // while($ < std::mem::size())
 //PacketHeader header @ $;
