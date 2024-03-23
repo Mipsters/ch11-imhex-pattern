@@ -240,7 +240,8 @@ struct PacketSecondaryHeader {
     
     u128 checksumOut = checksum(headerStartPos, $ - headerStartPos - sizeof(uSecChecksum), sizeof(uSecChecksum));
     
-    str outStr = std::format("Secondary Packet Header: Checksum doesn't match\n location: {}, width: {}, calculated: {:x}, expected: {:x}", headerStartPos, sizeof(uSecChecksum), checksumOut,uSecChecksum);
+    str outStr = "Secondary Packet Header: Checksum doesn't match\n location: {}, width: {}, calculated: {:x}, expected: {:x}";
+    outStr = std::format(outStr, outStr, headerStartPos, sizeof(uSecChecksum), checksumOut,uSecChecksum);
     std::assert(uSecChecksum == checksumOut, outStr);
 };
 
@@ -267,7 +268,8 @@ struct PacketHeader {
     
     u128 checksumOut = checksum(headerStartPos, $ - headerStartPos - sizeof(uChecksum), sizeof(uChecksum));
     
-    outStr = std::format("Packet Header: Checksum doesn't match\n location: {}, width: {}, calculated: {:x}, expected: {:x}", headerStartPos, sizeof(uChecksum), checksumOut, uChecksum);
+    outStr = "Packet Header: Checksum doesn't match\n location: {}, width: {}, calculated: {:x}, expected: {:x}";
+    outStr = std::format(outStr, headerStartPos, sizeof(uChecksum), checksumOut, uChecksum);
     std::assert(uChecksum == checksumOut, outStr);
     
     if (ubyPacketFlags.secondaryHeaderPresence) {
@@ -573,7 +575,8 @@ namespace MIL_1553 {
             else
                 NonRT2RTBody<header.lengthWord> body;
                 
-            str outStr = std::format("MIL_1553::FMT_1: body has wrong size\nlocation: 0x{:x}, expected: {}, found: {}", addressof(IPTS), header.lengthWord, sizeof(body));
+            str outStr = "MIL_1553::FMT_1: body has wrong size\nlocation: 0x{:x}, expected: {}, found: {}";
+            outStr = std::format(outStr, addressof(IPTS), header.lengthWord, sizeof(body));
             std::assert_warn(sizeof(body) == header.lengthWord, outStr);
         };
     }
@@ -632,7 +635,8 @@ struct Packet {
     }
     
     if (header.ubyPacketFlags.dataChecksumType != DataChecksumType::CHECKSUM_NONE) {
-        str outStr = std::format("Packet Trailer: Checksum doesn't match\n location: 0x{:x}, width: {}, calculated: {:x}, expected: {:x}", packetStart, checksumLen, checksumOut, uChecksum);
+        str outStr = "Packet Trailer: Checksum doesn't match\n location: 0x{:x}, width: {}, calculated: {:x}, expected: {:x}";
+        outStr = std::format(outStr, packetStart, checksumLen, checksumOut, uChecksum);
         std::assert_warn(uChecksum == checksumOut, outStr);
     }
 };
