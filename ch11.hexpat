@@ -255,7 +255,7 @@ struct PacketHeader {
     u32             ulPacketLen;    ///< Total packet length
     u32             ulDataLen;      ///< Data length
     DataTypeVersion ubyHdrVer;      ///< Header Version
-    // seqnum need to be 1 more (with rollover) then the value of the prev packcet in channel
+    // seqnum need to be 1 more (with rollover) then the value of the prev packet in channel
     u8              ubySeqNum;      ///< Sequence Number
     PacketFlags     ubyPacketFlags; ///< PacketFlags
     
@@ -467,8 +467,8 @@ namespace MIL_1553 {
             u16 lengthWord;
         };
 
-        enum TransmisionDirection : u8 {
-            RECIEVE = 0b0,
+        enum TransmissionDirection : u8 {
+            RECEIVE = 0b0,
             TRANSMIT = 0b1,
         };
 
@@ -477,7 +477,7 @@ namespace MIL_1553 {
         bitfield CommandWord {
             dataWordsNum                : 5;
             subAddress                  : 5;
-            TransmisionDirection dir    : 1;
+            TransmissionDirection dir   : 1;
             remoteTerminal              : 5;
         };
 
@@ -497,7 +497,7 @@ namespace MIL_1553 {
             bool dbca                   : 1;
             bool subsystemFlag          : 1;
             bool busy                   : 1;
-            bool broadcastCmdRecieved   : 1;
+            bool broadcastCmdReceived   : 1;
             padding                     : 3;
             bool serviceRequest         : 1;
             bool instrumentation        : 1;
@@ -510,7 +510,7 @@ namespace MIL_1553 {
             u128 bodyStart = $;
 
             if ($ - bodyStart + sizeof(CommandWord) <= byteCount)
-                CommandWord recieveCommandWord;
+                CommandWord receiveCommandWord;
             
             if ($ - bodyStart + sizeof(CommandWord) <= byteCount)
                 CommandWord transmitCommandWord;
@@ -526,12 +526,12 @@ namespace MIL_1553 {
             u16 data[while(($ - startLoc < realDataWordsNum * 2) && ($ - bodyStart < byteCount))];
 
             if ($ - bodyStart + sizeof(StatusWord) <= byteCount)
-                StatusWord recieveStatusWord;
+                StatusWord receiveStatusWord;
             
-            outStr = std::format("MIL_1553::FMT_1: rt2rt recieve command and status word need to share rt\nlocation 0x{:x}", bodyStart);
+            outStr = std::format("MIL_1553::FMT_1: rt2rt receive command and status word need to share rt\nlocation 0x{:x}", bodyStart);
             std::assert(transmitCommandWord.remoteTerminal == transmitStatusWord.remoteTerminal, outStr);
             outStr = std::format("MIL_1553::FMT_1: rt2rt command words need to have the same length\nlocation 0x{:x}", bodyStart);
-            std::assert(recieveCommandWord.dataWordsNum == transmitCommandWord.dataWordsNum, outStr);
+            std::assert(receiveCommandWord.dataWordsNum == transmitCommandWord.dataWordsNum, outStr);
         };
 
         // MIL-STD-1553C 4.3.3.6.1
@@ -542,7 +542,7 @@ namespace MIL_1553 {
             if ($ - bodyStart + sizeof(CommandWord) <= byteCount)
                 CommandWord commandWord;
 
-            if (commandWord.dir == TransmisionDirection::TRANSMIT) {
+            if (commandWord.dir == TransmissionDirection::TRANSMIT) {
                 if ($ - bodyStart + sizeof(StatusWord) <= byteCount) {
                     StatusWord statusWord;
 
@@ -555,7 +555,7 @@ namespace MIL_1553 {
             u128 startLoc = $;
             u16 data[while(($ - startLoc < realDataWordsNum * 2) && ($ - bodyStart < byteCount))];
             
-            if (commandWord.dir == TransmisionDirection::RECIEVE) {
+            if (commandWord.dir == TransmissionDirection::RECEIVE) {
                 if ($ - bodyStart + sizeof(StatusWord) <= byteCount) {
                     StatusWord statusWord;
 
@@ -574,7 +574,7 @@ namespace MIL_1553 {
                 RT2RTBody<header.lengthWord> body;
             else
                 NonRT2RTBody<header.lengthWord> body;
-                
+            
             str outStr = "MIL_1553::FMT_1: body has wrong size\nlocation: 0x{:x}, expected: {}, found: {}";
             outStr = std::format(outStr, addressof(IPTS), header.lengthWord, sizeof(body));
             std::assert_warn(sizeof(body) == header.lengthWord, outStr);
