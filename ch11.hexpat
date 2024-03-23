@@ -516,7 +516,8 @@ namespace MIL_1553 {
             if ($ - bodyStart + sizeof(StatusWord) <= byteCount)
                 StatusWord transmitStatusWord;
             
-            std::assert(transmitCommandWord.remoteTerminal == transmitStatusWord.remoteTerminal, "MIL_1553::FMT_1: rt2rt transmit command and status word need to share rt");
+            str outStr = std::format("MIL_1553::FMT_1: rt2rt transmit command and status word need to share rt\nlocation 0x{:x}", bodyStart);
+            std::assert(transmitCommandWord.remoteTerminal == transmitStatusWord.remoteTerminal, outStr);
             
             u8 realDataWordsNum = MIL_1553::FMT_1::dataWordsFromCW(transmitCommandWord.dataWordsNum);
             u128 startLoc = $;
@@ -525,8 +526,9 @@ namespace MIL_1553 {
             if ($ - bodyStart + sizeof(StatusWord) <= byteCount)
                 StatusWord recieveStatusWord;
             
-            std::assert(transmitCommandWord.remoteTerminal == transmitStatusWord.remoteTerminal, "MIL_1553::FMT_1: rt2rt recieve command and status word need to share rt");
-            str outStr = std::format("MIL_1553::FMT_1: rt2rt command words need to have the same length\nlocation 0x{:x}", bodyStart);
+            outStr = std::format("MIL_1553::FMT_1: rt2rt recieve command and status word need to share rt\nlocation 0x{:x}", bodyStart);
+            std::assert(transmitCommandWord.remoteTerminal == transmitStatusWord.remoteTerminal, outStr);
+            outStr = std::format("MIL_1553::FMT_1: rt2rt command words need to have the same length\nlocation 0x{:x}", bodyStart);
             std::assert(recieveCommandWord.dataWordsNum == transmitCommandWord.dataWordsNum, outStr);
         };
 
@@ -541,7 +543,9 @@ namespace MIL_1553 {
             if (commandWord.dir == TransmisionDirection::TRANSMIT) {
                 if ($ - bodyStart + sizeof(StatusWord) <= byteCount) {
                     StatusWord statusWord;
-                    std::assert(commandWord.remoteTerminal == statusWord.remoteTerminal, "MIL_1553::FMT_1: command and status word need to share rt");
+
+                    str outStr = std::format("MIL_1553::FMT_1: command and status word need to share rt\nlocation 0x{:x}", bodyStart);
+                    std::assert(commandWord.remoteTerminal == statusWord.remoteTerminal, outStr);
                 }
             }
 
@@ -552,7 +556,9 @@ namespace MIL_1553 {
             if (commandWord.dir == TransmisionDirection::RECIEVE) {
                 if ($ - bodyStart + sizeof(StatusWord) <= byteCount) {
                     StatusWord statusWord;
-                    std::assert(commandWord.remoteTerminal == statusWord.remoteTerminal, "MIL_1553::FMT_1: command and status word need to share rt");
+
+                    str outStr = std::format("MIL_1553::FMT_1: command and status word need to share rt\nlocation 0x{:x}", bodyStart);
+                    std::assert(commandWord.remoteTerminal == statusWord.remoteTerminal, outStr);
                 }
             }
         };
@@ -605,7 +611,7 @@ struct Packet {
             //u8 data[header.ulDataLen - sizeof(csdw)];
         }
         (_): {
-            std::assert_warn(false, std::format("Unsupported data type at {}", packetStart));
+            std::assert_warn(false, std::format("Unsupported data type at 0x{:x}", packetStart));
             u8 data[header.ulDataLen] [[comment("default implementation")]];
         }
     }
@@ -626,7 +632,7 @@ struct Packet {
     }
     
     if (header.ubyPacketFlags.dataChecksumType != DataChecksumType::CHECKSUM_NONE) {
-        str outStr = std::format("Packet Trailer: Checksum doesn't match\n location: {}, width: {}, calculated: {:x}, expected: {:x}", packetStart, checksumToLen(header.ubyPacketFlags.dataChecksumType), checksumOut, uChecksum);
+        str outStr = std::format("Packet Trailer: Checksum doesn't match\n location: 0x{:x}, width: {}, calculated: {:x}, expected: {:x}", packetStart, checksumLen, checksumOut, uChecksum);
         std::assert_warn(uChecksum == checksumOut, outStr);
     }
 };
