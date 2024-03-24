@@ -623,7 +623,11 @@ struct Packet {
     // 11.2.1.4 Packet Trailer, Version 1
     u128 checksumLen = checksumToLen(header.ubyPacketFlags.dataChecksumType);
     
-    u8 filler[($ - packetStart - checksumLen) % 4];
+    // ($ - packetStart + checksumLen) - packet content size
+    // ($ - packetStart + checksumLen) % 4 - remainder, 0-3
+    // 4 - ($ - packetStart + checksumLen) % 4 - number of bytes missing to complete to nearest multipicant of 4, 1-4
+    // (4 - ($ - packetStart + checksumLen) % 4) & 3 - replaces the value of 4 with 0 in the previouse range, 0-3
+    u8 filler[(4 - ($ - packetStart + checksumLen) % 4) & 3];
     
     if (header.ubyPacketFlags.dataChecksumType != DataChecksumType::CHECKSUM_NONE)
         u128 checksumOut = checksum(packetBodyStart, $ - packetBodyStart, checksumLen);
@@ -639,8 +643,9 @@ struct Packet {
         outStr = std::format(outStr, packetStart, checksumLen, checksumOut, uChecksum);
         std::assert_warn(uChecksum == checksumOut, outStr);
     }
+    
+    // maybe this should be before the regular filler, I don't know :(
+    u8 packetFiller[header.ulPacketLen - ($ - packetStart)];
 };
 
-Packet packet[99] @ 0x00;
-// while($ < std::mem::size())
-//PacketHeader header @ $;
+Packet packet[while($ < std::mem::size())] @ 0x00;
