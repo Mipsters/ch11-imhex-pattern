@@ -551,9 +551,16 @@ namespace MIL_1553 {
                 }
             }
 
+            if (commandWord.subAddress == 0 || commandWord.subAddress == 31) {
+                std::print("ModeCode\n");
+                if (commandWord.dataWordsNum & 0b10000) {
+                    u16 data;
+                }
+            } else {
             u8 realDataWordsNum = MIL_1553::FMT_1::dataWordsFromCW(commandWord.dataWordsNum);
             u128 startLoc = $;
             u16 data[while(($ - startLoc < realDataWordsNum * 2) && ($ - bodyStart < byteCount))];
+            }
             
             if (commandWord.dir == TransmissionDirection::RECEIVE) {
                 if ($ - bodyStart + sizeof(StatusWord) <= byteCount) {
